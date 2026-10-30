@@ -1,7 +1,8 @@
 #!/bin/bash
 # Boots a built image the way CAPMOX does (NoCloud seed ISO, QEMU guest agent channel) and checks
 # that it is a working kubeadm node: cloud-init done via NoCloud, containerd and guest agent up,
-# `kubeadm init` without preflight errors, node registered.
+# `kubeadm init` without preflight errors, node registered. A guest-agent-only image (qga) is
+# checked for NoCloud and the guest agent only.
 #
 #   ./smoke-test.sh output/<os>-kube-<version>.qcow2
 #
@@ -53,8 +54,13 @@ cloud-init status --long | grep -q 'DataSourceNoCloud' || { echo "FAIL: not NoCl
 [ "$(cloud-init status --format json | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["errors"]))')" = 0 ] \
   || { echo "FAIL: cloud-init errors"; exit 1; }
 cat /etc/capi-image-release
-systemctl is-active containerd qemu-guest-agent
 . /etc/capi-image-release
+if [ "${IMAGE_VARIANT:-kubeadm}" = qga ]; then
+  systemctl is-active qemu-guest-agent
+  ! command -v kubeadm >/dev/null || { echo "FAIL: kubeadm in a qga image"; exit 1; }
+  exit 0
+fi
+systemctl is-active containerd qemu-guest-agent
 sudo kubeadm init --kubernetes-version "$KUBERNETES_VERSION" --pod-network-cidr 10.244.0.0/16 > /tmp/init.log 2>&1 \
   || { tail -30 /tmp/init.log; echo "FAIL: kubeadm init"; exit 1; }
 grep -E 'WARNING' /tmp/init.log || echo "no kubeadm warnings"

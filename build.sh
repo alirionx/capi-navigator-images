@@ -1,20 +1,25 @@
 #!/bin/bash
-# Builds a Cluster API node image for kubeadm from a stock cloud image with virt-customize.
+# Builds a node image from a stock cloud image with virt-customize: a Cluster API image for kubeadm,
+# or with `qga` the stock image with only the QEMU guest agent added.
 #
-#   ./build.sh <os> <kubernetes-version>      e.g. ./build.sh ubuntu-2604 v1.36.5
+#   ./build.sh <os> <kubernetes-version | qga>      e.g. ./build.sh ubuntu-2604 v1.36.5
 #
-# <os>: ubuntu-2404 | ubuntu-2604 | debian-13 (amd64). Needs libguestfs-tools and qemu-utils;
-# runs as root or with a readable kernel in /boot (libguestfs appliance). KVM speeds it up a lot.
-# Output: output/<os>-kube-<version>.qcow2 plus .sha256
+# <os>: ubuntu-2404 | ubuntu-2604 | debian-12 | debian-13 (amd64). Needs libguestfs-tools and
+# qemu-utils; runs as root or with a readable kernel in /boot (libguestfs appliance). KVM speeds it
+# up a lot. Output: output/<os>-kube-<version>.qcow2 or output/<os>-qga.qcow2, plus .sha256
 set -euo pipefail
 cd "$(dirname "$0")"
 
-OS="${1:?os: ubuntu-2404 | ubuntu-2604 | debian-13}"
-K8S_VERSION="${2:?Kubernetes version, e.g. v1.36.5}"
-CONTAINERD_VERSION="${CONTAINERD_VERSION:-2.4.2}"
-RUNC_VERSION="${RUNC_VERSION:-1.5.2}"
+OS="${1:?os: ubuntu-2404 | ubuntu-2604 | debian-12 | debian-13}"
+VARIANT="${2:?Kubernetes version (e.g. v1.36.5) or qga}"
+. ./versions.env                           # CONTAINERD_VERSION, RUNC_VERSION
 export TMPDIR="${TMPDIR:-/var/tmp}"        # libguestfs appliance; /tmp is often a small tmpfs
-[[ "$K8S_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "invalid version: $K8S_VERSION" >&2; exit 1; }
+if [ "$VARIANT" = qga ]; then
+  NAME="${OS}-qga"
+else
+  [[ "$VARIANT" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "invalid version: $VARIANT" >&2; exit 1; }
+  NAME="${OS}-kube-${VARIANT}"
+fi
 
 # Stock cloud images and their checksum lists.
 case "$OS" in
@@ -22,6 +27,8 @@ case "$OS" in
                BASE=noble-server-cloudimg-amd64.img; SUMS=SHA256SUMS; SUMCMD=sha256sum ;;
   ubuntu-2604) BASE_URL=https://cloud-images.ubuntu.com/resolute/current
                BASE=resolute-server-cloudimg-amd64.img; SUMS=SHA256SUMS; SUMCMD=sha256sum ;;
+  debian-12)   BASE_URL=https://cloud.debian.org/images/cloud/bookworm/latest
+               BASE=debian-12-genericcloud-amd64.qcow2; SUMS=SHA512SUMS; SUMCMD=sha512sum ;;
   debian-13)   BASE_URL=https://cloud.debian.org/images/cloud/trixie/latest
                BASE=debian-13-genericcloud-amd64.qcow2; SUMS=SHA512SUMS; SUMCMD=sha512sum ;;
   *) echo "unsupported os: $OS" >&2; exit 1 ;;
@@ -32,12 +39,23 @@ mkdir -p cache output
 curl -fsSL "$BASE_URL/$SUMS" | awk -v f="$BASE" '$2 == f || $2 == "*" f { print $1 "  cache/" f }' \
   | grep . | $SUMCMD -c
 
-OUT="output/${OS}-kube-${K8S_VERSION}.qcow2"
+OUT="output/${NAME}.qcow2"
 cp "cache/$BASE" "$OUT"
 qemu-img resize -q "$OUT" 8G
 
-printf 'K8S_VERSION=%s\nCONTAINERD_VERSION=%s\nRUNC_VERSION=%s\nBASE_IMAGE=%s\n' \
-  "$K8S_VERSION" "$CONTAINERD_VERSION" "$RUNC_VERSION" "$BASE" > output/capi-versions
+# What goes into the image: only the guest agent and the release file, or the kubeadm node.
+if [ "$VARIANT" = qga ]; then
+  CUSTOMIZE=(--install qemu-guest-agent
+    --write "/etc/capi-image-release:$(printf 'IMAGE_VARIANT=qga\nBASE_IMAGE=%s\nBUILT=%s' \
+      "$BASE" "$(date -u +%Y-%m-%dT%H:%M:%SZ)")")
+else
+  printf 'K8S_VERSION=%s\nCONTAINERD_VERSION=%s\nRUNC_VERSION=%s\nBASE_IMAGE=%s\n' \
+    "$VARIANT" "$CONTAINERD_VERSION" "$RUNC_VERSION" "$BASE" > "output/${NAME}.versions"
+  CUSTOMIZE=(--install qemu-guest-agent,conntrack,socat,ebtables,ethtool,curl,gnupg,ca-certificates
+    --upload "output/${NAME}.versions:/tmp/capi-versions"
+    --upload prepare-node.sh:/tmp/prepare-node.sh
+    --run-command 'bash /tmp/prepare-node.sh && rm -f /tmp/prepare-node.sh /tmp/capi-versions')
+fi
 
 # The root file system is partition 1 in the Ubuntu and Debian cloud images.
 DEBUG=()
@@ -45,14 +63,11 @@ DEBUG=()
 virt-customize -a "$OUT" \
   "${DEBUG[@]}" \
   --run-command 'growpart /dev/sda 1 && resize2fs /dev/sda1' \
-  --install qemu-guest-agent,conntrack,socat,ebtables,ethtool,curl,gnupg,ca-certificates \
-  --upload output/capi-versions:/tmp/capi-versions \
-  --upload prepare-node.sh:/tmp/prepare-node.sh \
-  --run-command 'bash /tmp/prepare-node.sh && rm -f /tmp/prepare-node.sh /tmp/capi-versions' \
+  "${CUSTOMIZE[@]}" \
   --run-command 'apt-get clean && rm -rf /var/lib/apt/lists/*' \
   --run-command 'cloud-init clean --logs --seed' \
   --truncate /etc/machine-id
-rm -f output/capi-versions
+rm -f "output/${NAME}.versions"
 
 # Compress (the image is sparse anyway) and record the checksum.
 qemu-img convert -O qcow2 -c "$OUT" "$OUT.tmp" && mv "$OUT.tmp" "$OUT"

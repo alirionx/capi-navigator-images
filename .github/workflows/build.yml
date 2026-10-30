@@ -1,22 +1,28 @@
 name: Build node images
 
-# Manual trigger only: builds Cluster API node images for kubeadm from stock cloud images
-# (virt-customize), boots each one like CAPMOX does and runs `kubeadm init` as smoke test.
-# Images are workflow artifacts (short retention); with `release` they also become assets of a
-# GitHub release (one per run, all images plus SHA256SUMS).
+# Manual trigger only: builds node images from stock cloud images (virt-customize), Cluster API
+# images for kubeadm and guest-agent-only images, boots each one like CAPMOX does and runs
+# `kubeadm init` as smoke test. Without lists, the rule in versions.env (matrix.sh) decides what is
+# built. Images are workflow artifacts (short retention); with `release` they also become assets of
+# a GitHub release (one per run, all images plus SHA256SUMS), after which the cleanup deletes what
+# the rule no longer keeps.
 on:
   workflow_dispatch:
     inputs:
       os:
-        description: 'Operating systems (JSON list): ubuntu-2404, ubuntu-2604, debian-13'
-        default: '["ubuntu-2604", "debian-13"]'
-        required: true
+        description: 'Operating systems (JSON list, e.g. ["debian-13"]); empty: the rule in versions.env'
+        default: ''
+        required: false
       kubernetes:
-        description: 'Kubernetes versions (JSON list)'
-        default: '["v1.35.9", "v1.36.5"]'
-        required: true
+        description: 'Kubernetes versions (JSON list, e.g. ["v1.36.5"]); empty: the rule in versions.env'
+        default: ''
+        required: false
+      qga:
+        description: 'Also build the guest-agent-only image of every operating system'
+        type: boolean
+        default: true
       smoke-test:
-        description: 'Boot every image and run kubeadm init'
+        description: 'Boot every image (and run kubeadm init on the kubeadm images)'
         type: boolean
         default: true
       retention-days:
@@ -27,22 +33,53 @@ on:
         description: 'Publish the images as a GitHub release (needs all builds to succeed)'
         type: boolean
         default: false
+      cleanup:
+        description: 'After the release, delete released images the rule no longer keeps'
+        type: boolean
+        default: true
 
 permissions:
   contents: read
 
 jobs:
+  matrix:
+    name: Matrix
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve the rule
+        id: matrix
+        env:
+          OS_INPUT: ${{ inputs.os }}
+          K8S_INPUT: ${{ inputs.kubernetes }}
+          QGA: ${{ inputs.qga }}
+        run: |
+          set -euo pipefail
+          os="$OS_INPUT";   [ -n "$os" ]  || os="$(./matrix.sh os | jq -Rnc '[inputs]')"
+          k8s="$K8S_INPUT"; [ -n "$k8s" ] || k8s="$(./matrix.sh kubernetes | jq -Rnc '[inputs]')"
+          matrix="$(jq -nc --argjson os "$os" --argjson k "$k8s" --argjson q "$QGA" \
+            '{os: $os, variant: ((if $q then ["qga"] else [] end) + $k)}')"
+          jq -e '(.os | length) > 0 and (.variant | length) > 0' <<<"$matrix" >/dev/null \
+            || { echo "nothing to build: $matrix" >&2; exit 1; }
+          jq . <<<"$matrix"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
   build:
-    name: ${{ matrix.os }} / ${{ matrix.kubernetes }}
+    name: ${{ matrix.os }} / ${{ matrix.variant }}
+    needs: matrix
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(inputs.os) }}
-        kubernetes: ${{ fromJSON(inputs.kubernetes) }}
+        os: ${{ fromJSON(needs.matrix.outputs.matrix).os }}
+        variant: ${{ fromJSON(needs.matrix.outputs.matrix).variant }}
     env:
       TMPDIR: /tmp
+      IMAGE: ${{ matrix.os }}-${{ matrix.variant == 'qga' && 'qga' || format('kube-{0}', matrix.variant) }}
     steps:
       - uses: actions/checkout@v7
 
@@ -63,11 +100,11 @@ jobs:
 
       # The build runs in a Debian 13 container (libguestfs 1.54); see build-in-container.sh.
       - name: Build
-        run: ./build-in-container.sh "${{ matrix.os }}" "${{ matrix.kubernetes }}"
+        run: ./build-in-container.sh "${{ matrix.os }}" "${{ matrix.variant }}"
 
-      - name: Smoke test (boot with NoCloud, kubeadm init)
+      - name: Smoke test (boot with NoCloud, guest agent, kubeadm init)
         if: inputs.smoke-test
-        run: ./smoke-test.sh "output/${{ matrix.os }}-kube-${{ matrix.kubernetes }}.qcow2"
+        run: ./smoke-test.sh "output/${IMAGE}.qcow2"
 
       - name: Diagnostics on failure
         if: failure()
@@ -77,22 +114,33 @@ jobs:
       - name: Upload image
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.os }}-kube-${{ matrix.kubernetes }}
+          name: ${{ env.IMAGE }}
           path: |
-            output/${{ matrix.os }}-kube-${{ matrix.kubernetes }}.qcow2
-            output/${{ matrix.os }}-kube-${{ matrix.kubernetes }}.qcow2.sha256
+            output/${{ env.IMAGE }}.qcow2
+            output/${{ env.IMAGE }}.qcow2.sha256
           retention-days: ${{ inputs.retention-days }}
           compression-level: 0
           if-no-files-found: error
 
   release:
     name: Release
-    needs: build
+    needs: [matrix, build]
     if: inputs.release
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: versions.env
+          sparse-checkout-cone-mode: false
+
+      # A full run is about 20 GB of images; the runner image has less free space than that.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+
       - uses: actions/download-artifact@v8
         with:
           path: dist
@@ -101,10 +149,10 @@ jobs:
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
-          OS_LIST: ${{ inputs.os }}
-          K8S_LIST: ${{ inputs.kubernetes }}
+          MATRIX: ${{ needs.matrix.outputs.matrix }}
         run: |
           set -euo pipefail
+          . ./versions.env
           cd dist
           sha256sum -c ./*.sha256
           cat ./*.sha256 > SHA256SUMS && rm ./*.sha256
@@ -114,15 +162,16 @@ jobs:
             echo "> **For testing purposes only.** Provided \"as is\", without any warranty, support or security"
             echo "> updates; not for production. The author accepts no responsibility or liability. See README."
             echo
-            echo "Cluster API node images for kubeadm, built from stock cloud images with virt-customize"
-            echo "and smoke-tested (NoCloud boot, QEMU guest agent, \`kubeadm init\`)."
+            echo "Node images built from stock cloud images with virt-customize and smoke-tested (NoCloud boot,"
+            echo "QEMU guest agent, \`kubeadm init\` on the kubeadm images): \`<os>-kube-<version>\` are Cluster API"
+            echo "images for kubeadm, \`<os>-qga\` are the stock images with only the QEMU guest agent added."
             echo
             echo "| Image | Size |"
             echo "| --- | --- |"
             for f in *.qcow2; do echo "| \`$f\` | $(du -h "$f" | cut -f1) |"; done
             echo
-            echo "Operating systems: ${OS_LIST} · Kubernetes: ${K8S_LIST}"
-            echo "containerd ${CONTAINERD_VERSION:-2.4.2}, runc ${RUNC_VERSION:-1.5.2}; details in \`/etc/capi-image-release\`."
+            echo "Operating systems: $(jq -r '.os | join(", ")' <<<"$MATRIX") · Variants: $(jq -r '.variant | join(", ")' <<<"$MATRIX")"
+            echo "containerd ${CONTAINERD_VERSION}, runc ${RUNC_VERSION}; details in \`/etc/capi-image-release\`."
             echo
             echo "Verify: \`sha256sum -c SHA256SUMS\`. Proxmox VE import: see README."
             echo
@@ -132,3 +181,13 @@ jobs:
             --title "Node images $(date -u +%Y-%m-%d) (run ${GITHUB_RUN_NUMBER})" \
             --notes-file notes.md ./*.qcow2 SHA256SUMS
           echo "Released $tag"
+
+  cleanup:
+    name: Cleanup
+    needs: release
+    if: inputs.release && inputs.cleanup
+    permissions:
+      contents: write
+    uses: ./.github/workflows/cleanup.yml
+    with:
+      dry-run: false

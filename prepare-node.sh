@@ -85,6 +85,7 @@ printf 'runtime-endpoint: unix:///run/containerd/containerd.sock\nimage-endpoint
 systemctl enable containerd.service kubelet.service
 
 cat > /etc/capi-image-release <<EOF
+IMAGE_VARIANT=kubeadm
 KUBERNETES_VERSION=${K8S_VERSION}
 CONTAINERD_VERSION=${CONTAINERD_VERSION}
 RUNC_VERSION=${RUNC_VERSION}
