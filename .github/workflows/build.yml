@@ -66,6 +66,10 @@ jobs:
           # passt sandboxes itself in a user namespace, which Ubuntu restricts for unconfined
           # programs (the usual fix on runners, as for Chrome).
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          # virt-customize copies the host's resolv.conf into the guest; the systemd-resolved stub
+          # (127.0.0.53) is unreachable from there, so use the upstream servers directly.
+          sudo ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+          grep nameserver /etc/resolv.conf
           virt-customize --version
 
       - name: Build
