@@ -56,20 +56,10 @@ jobs:
             libguestfs-tools qemu-utils qemu-system-x86 cloud-image-utils socat
           # libguestfs builds its appliance from the host kernel, which Ubuntu keeps root-only.
           sudo chmod 0644 /boot/vmlinuz-*
-          # Ubuntu's AppArmor profile for passt (libguestfs networking) denies its socket in
-          # $XDG_RUNTIME_DIR, where libguestfs puts it ("passt exited with status 1"). Unload
-          # only that profile; the runner is thrown away after the job.
-          if sudo grep -q '^passt ' /sys/kernel/security/apparmor/profiles; then
-            echo -n passt | sudo tee /sys/kernel/security/apparmor/.remove >/dev/null
-            echo "AppArmor profile passt unloaded"
-          fi
-          # passt sandboxes itself in a user namespace, which Ubuntu restricts for unconfined
-          # programs (the usual fix on runners, as for Chrome).
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          # virt-customize copies the host's resolv.conf into the guest; the systemd-resolved stub
-          # (127.0.0.53) is unreachable from there, so use the upstream servers directly.
-          sudo ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
-          grep nameserver /etc/resolv.conf
+          # Without passt, libguestfs uses QEMU's user networking (SLIRP) for the appliance. passt
+          # on Ubuntu runners is blocked by AppArmor (socket, user namespace) and gives the
+          # appliance no working DNS; SLIRP forwards DNS through the host's resolver.
+          sudo dpkg --remove --force-depends passt
           virt-customize --version
 
       - name: Build
