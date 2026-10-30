@@ -17,6 +17,12 @@ sudo ./build.sh debian-13 v1.36.5         # → output/debian-13-kube-v1.36.5.qc
 sudo ./smoke-test.sh output/debian-13-kube-v1.36.5.qcow2
 ```
 
+Or with Docker only (same toolchain as in CI, Debian 13 with libguestfs 1.54):
+
+```bash
+./build-in-container.sh debian-13 v1.36.5
+```
+
 Operating systems: `ubuntu-2404`, `ubuntu-2604`, `debian-13` (amd64).
 
 ## GitHub Actions

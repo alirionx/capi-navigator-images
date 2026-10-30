@@ -49,27 +49,16 @@ jobs:
           sudo udevadm trigger --name-match=kvm
           ls -l /dev/kvm
 
-      - name: Install libguestfs and QEMU
+      - name: Install QEMU for the smoke test
+        if: inputs.smoke-test
         run: |
           sudo apt-get update -q
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
-            libguestfs-tools qemu-utils qemu-system-x86 cloud-image-utils socat
-          # libguestfs builds its appliance from the host kernel, which Ubuntu keeps root-only.
-          sudo chmod 0644 /boot/vmlinuz-*
-          # Without passt, libguestfs uses QEMU's user networking (SLIRP) for the appliance. passt
-          # on Ubuntu runners is blocked by AppArmor (socket, user namespace) and gives the
-          # appliance no working DNS; SLIRP forwards DNS through the host's resolver.
-          sudo dpkg --remove --force-depends passt
-          # virt-customize copies the host's resolv.conf into the guest; the systemd-resolved stub
-          # (127.0.0.53) only exists on the host, so give the guest the upstream servers.
-          sudo ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
-          grep nameserver /etc/resolv.conf
-          virt-customize --version
+            qemu-utils qemu-system-x86 cloud-image-utils socat
 
+      # The build runs in a Debian 13 container (libguestfs 1.54); see build-in-container.sh.
       - name: Build
-        env:
-          DEBUG_NET: '1'
-        run: ./build.sh "${{ matrix.os }}" "${{ matrix.kubernetes }}"
+        run: ./build-in-container.sh "${{ matrix.os }}" "${{ matrix.kubernetes }}"
 
       - name: Smoke test (boot with NoCloud, kubeadm init)
         if: inputs.smoke-test
@@ -78,8 +67,6 @@ jobs:
       - name: Diagnostics on failure
         if: failure()
         run: |
-          sudo dmesg | grep -i -E 'apparmor="DENIED"|passt' | tail -20 || true
-          libguestfs-test-tool 2>&1 | grep -i -E 'passt|error|fail|kvm|TEST FINISHED' | head -40 || true
           df -h / /tmp
 
       - name: Upload image
