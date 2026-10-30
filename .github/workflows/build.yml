@@ -1,0 +1,75 @@
+name: Build node images
+
+# Manual trigger only: builds Cluster API node images for kubeadm from stock cloud images
+# (virt-customize), boots each one like CAPMOX does and runs `kubeadm init` as smoke test.
+# Images are workflow artifacts only (short retention), never releases.
+on:
+  workflow_dispatch:
+    inputs:
+      os:
+        description: 'Operating systems (JSON list): ubuntu-2404, ubuntu-2604, debian-13'
+        default: '["ubuntu-2604", "debian-13"]'
+        required: true
+      kubernetes:
+        description: 'Kubernetes versions (JSON list)'
+        default: '["v1.35.9", "v1.36.5"]'
+        required: true
+      smoke-test:
+        description: 'Boot every image and run kubeadm init'
+        type: boolean
+        default: true
+      retention-days:
+        description: 'Days to keep the image artifacts'
+        default: '3'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.os }} / ${{ matrix.kubernetes }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(inputs.os) }}
+        kubernetes: ${{ fromJSON(inputs.kubernetes) }}
+    env:
+      TMPDIR: /var/tmp
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Enable KVM for the runner user
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      - name: Install libguestfs and QEMU
+        run: |
+          sudo apt-get update -q
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
+            libguestfs-tools qemu-utils qemu-system-x86 cloud-image-utils socat
+          virt-customize --version
+
+      - name: Build
+        run: sudo -E ./build.sh "${{ matrix.os }}" "${{ matrix.kubernetes }}"
+
+      - name: Smoke test (boot with NoCloud, kubeadm init)
+        if: inputs.smoke-test
+        run: sudo -E ./smoke-test.sh "output/${{ matrix.os }}-kube-${{ matrix.kubernetes }}.qcow2"
+
+      - name: Upload image
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.os }}-kube-${{ matrix.kubernetes }}
+          path: |
+            output/${{ matrix.os }}-kube-${{ matrix.kubernetes }}.qcow2
+            output/${{ matrix.os }}-kube-${{ matrix.kubernetes }}.qcow2.sha256
+          retention-days: ${{ inputs.retention-days }}
+          compression-level: 0
+          if-no-files-found: error
