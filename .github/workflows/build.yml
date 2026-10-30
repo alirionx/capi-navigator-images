@@ -37,7 +37,9 @@ jobs:
         os: ${{ fromJSON(inputs.os) }}
         kubernetes: ${{ fromJSON(inputs.kubernetes) }}
     env:
-      TMPDIR: /var/tmp
+      # Not /var/tmp: Ubuntu's AppArmor profile lets passt (libguestfs networking) create its
+      # socket only in a few places such as /tmp ("passt exited with status 1" otherwise).
+      TMPDIR: /tmp
     steps:
       - uses: actions/checkout@v7
 
@@ -62,6 +64,12 @@ jobs:
       - name: Smoke test (boot with NoCloud, kubeadm init)
         if: inputs.smoke-test
         run: sudo -E ./smoke-test.sh "output/${{ matrix.os }}-kube-${{ matrix.kubernetes }}.qcow2"
+
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          sudo dmesg | grep -i -E 'apparmor="DENIED"|passt' | tail -20 || true
+          df -h / /tmp
 
       - name: Upload image
         uses: actions/upload-artifact@v7
