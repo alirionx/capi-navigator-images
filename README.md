@@ -34,7 +34,7 @@ switched on, the run also creates a GitHub release `images-<date>-<run>` with al
 `SHA256SUMS` (assets up to 2 GiB each; the images are 0.8–1.4 GB).
 
 ```bash
-gh release download images-20261030-10 -R alirionx/capi-navigator-images -p 'debian-13-*' -p SHA256SUMS
+gh release download images-<date>-<run> -R alirionx/capi-navigator-images -p 'debian-13-*' -p SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 
