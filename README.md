@@ -29,7 +29,14 @@ Operating systems: `ubuntu-2404`, `ubuntu-2604`, `debian-13` (amd64).
 
 **Actions → Build node images → Run workflow**: JSON lists of operating systems and Kubernetes
 versions; every combination is built, booted with a NoCloud seed (as CAPMOX does) and initialised
-with `kubeadm init`. The images are workflow artifacts with a short retention, no releases.
+with `kubeadm init`. The images are workflow artifacts with a short retention; with **release**
+switched on, the run also creates a GitHub release `images-<date>-<run>` with all images and a
+`SHA256SUMS` (assets up to 2 GiB each; the images are 0.8–1.4 GB).
+
+```bash
+gh release download images-20261030-10 -R alirionx/capi-navigator-images -p 'debian-13-*' -p SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing
+```
 
 ## Proxmox VE
 

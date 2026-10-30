@@ -2,7 +2,8 @@ name: Build node images
 
 # Manual trigger only: builds Cluster API node images for kubeadm from stock cloud images
 # (virt-customize), boots each one like CAPMOX does and runs `kubeadm init` as smoke test.
-# Images are workflow artifacts only (short retention), never releases.
+# Images are workflow artifacts (short retention); with `release` they also become assets of a
+# GitHub release (one per run, all images plus SHA256SUMS).
 on:
   workflow_dispatch:
     inputs:
@@ -22,6 +23,10 @@ on:
         description: 'Days to keep the image artifacts'
         default: '3'
         required: true
+      release:
+        description: 'Publish the images as a GitHub release (needs all builds to succeed)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -79,3 +84,47 @@ jobs:
           retention-days: ${{ inputs.retention-days }}
           compression-level: 0
           if-no-files-found: error
+
+  release:
+    name: Release
+    needs: build
+    if: inputs.release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OS_LIST: ${{ inputs.os }}
+          K8S_LIST: ${{ inputs.kubernetes }}
+        run: |
+          set -euo pipefail
+          cd dist
+          sha256sum -c ./*.sha256
+          cat ./*.sha256 > SHA256SUMS && rm ./*.sha256
+          tag="images-$(date -u +%Y%m%d)-${GITHUB_RUN_NUMBER}"
+          {
+            echo "Cluster API node images for kubeadm, built from stock cloud images with virt-customize"
+            echo "and smoke-tested (NoCloud boot, QEMU guest agent, \`kubeadm init\`)."
+            echo
+            echo "| Image | Size |"
+            echo "| --- | --- |"
+            for f in *.qcow2; do echo "| \`$f\` | $(du -h "$f" | cut -f1) |"; done
+            echo
+            echo "Operating systems: ${OS_LIST} · Kubernetes: ${K8S_LIST}"
+            echo "containerd ${CONTAINERD_VERSION:-2.4.2}, runc ${RUNC_VERSION:-1.5.2}; details in \`/etc/capi-image-release\`."
+            echo
+            echo "Verify: \`sha256sum -c SHA256SUMS\`. Proxmox VE import: see README."
+            echo
+            echo "Built by run [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) from ${GITHUB_SHA::7}."
+          } > notes.md
+          gh release create "$tag" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Node images $(date -u +%Y-%m-%d) (run ${GITHUB_RUN_NUMBER})" \
+            --notes-file notes.md ./*.qcow2 SHA256SUMS
+          echo "Released $tag"
