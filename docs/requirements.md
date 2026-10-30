@@ -199,8 +199,11 @@ All of it is set in `versions.env`, the only place for versions and the rule (IM
 - [x] The full rule (4 operating systems × `qga` + 4 Kubernetes versions) builds and passes the smoke
       test in GitHub Actions, including `ubuntu-2404`, `debian-12` and the `qga` images (run
       41125563800, 2026-10-30; 18.6 GB in all, kubeadm images 0.76–1.35 GB, `qga` 0.39–0.95 GB).
-- [ ] A release of the full rule is created, and the cleanup after it removes the older builds of
-      the same images and leaves releases without images deleted.
+- [x] A release of the full rule is created, and the cleanup after it removes the older builds of
+      the same images and leaves releases without images deleted (2026-10-30: a push of build files
+      built and released `images-20261030-15`; the cleanup deleted `images-20261030-14` and its tag).
+- [ ] A manual run with `release` and no change since the last release builds and tests, but does
+      not release (IMG-F-34).
 - [ ] `KUBERNETES_MINORS` and the runtime versions match CAPI Navigator's `versions.yaml`
       (IMG-F-50, IMG-F-51).
 
