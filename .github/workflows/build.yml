@@ -60,9 +60,15 @@ jobs:
           # on Ubuntu runners is blocked by AppArmor (socket, user namespace) and gives the
           # appliance no working DNS; SLIRP forwards DNS through the host's resolver.
           sudo dpkg --remove --force-depends passt
+          # virt-customize copies the host's resolv.conf into the guest; the systemd-resolved stub
+          # (127.0.0.53) only exists on the host, so give the guest the upstream servers.
+          sudo ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+          grep nameserver /etc/resolv.conf
           virt-customize --version
 
       - name: Build
+        env:
+          DEBUG_NET: '1'
         run: ./build.sh "${{ matrix.os }}" "${{ matrix.kubernetes }}"
 
       - name: Smoke test (boot with NoCloud, kubeadm init)

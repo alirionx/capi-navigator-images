@@ -40,7 +40,10 @@ printf 'K8S_VERSION=%s\nCONTAINERD_VERSION=%s\nRUNC_VERSION=%s\nBASE_IMAGE=%s\n'
   "$K8S_VERSION" "$CONTAINERD_VERSION" "$RUNC_VERSION" "$BASE" > output/capi-versions
 
 # The root file system is partition 1 in the Ubuntu and Debian cloud images.
+DEBUG=()
+[ "${DEBUG_NET:-}" = 1 ] && DEBUG=(--run-command 'cat /etc/resolv.conf; ip -4 addr; ip route; getent hosts deb.debian.org cloud-images.ubuntu.com || echo "DNS FAILED"')
 virt-customize -a "$OUT" \
+  "${DEBUG[@]}" \
   --run-command 'growpart /dev/sda 1 && resize2fs /dev/sda1' \
   --install qemu-guest-agent,conntrack,socat,ebtables,ethtool,curl,gnupg,ca-certificates \
   --upload output/capi-versions:/tmp/capi-versions \
