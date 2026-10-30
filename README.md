@@ -55,3 +55,8 @@ qm disk import 9000 debian-13-kube-v1.36.5.qcow2 local-zfs
 qm set 9000 --virtio0 local-zfs:vm-9000-disk-0 --boot order=virtio0 --ide2 local-zfs:cloudinit
 qm template 9000
 ```
+
+## License
+
+[Apache License 2.0](LICENSE). The images contain third-party software (Ubuntu or Debian, Kubernetes,
+containerd, runc and others) under their own licenses.
