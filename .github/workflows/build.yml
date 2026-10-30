@@ -63,6 +63,9 @@ jobs:
             echo -n passt | sudo tee /sys/kernel/security/apparmor/.remove >/dev/null
             echo "AppArmor profile passt unloaded"
           fi
+          # passt sandboxes itself in a user namespace, which Ubuntu restricts for unconfined
+          # programs (the usual fix on runners, as for Chrome).
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           virt-customize --version
 
       - name: Build
