@@ -119,8 +119,10 @@ changes what the cleanup deletes: run `./cleanup.sh` (dry run) and show the resu
 
 ## Safety while working
 
-- Ask before running the workflow, creating or deleting releases or tags, running the cleanup
-  without dry run, or pushing. Releases are public (the repository is public).
+- Commit freely, but **never push**: the user pushes. A workflow run that needs new commits waits
+  until the user has pushed.
+- Ask before running the workflow, creating or deleting releases or tags, or running the cleanup
+  without dry run. Releases are public (the repository is public).
 - Ask before touching a real Proxmox VE, registry or cluster.
 - Local builds need root or Docker and download several GB; say so before starting one.
 
