@@ -37,8 +37,6 @@ jobs:
         os: ${{ fromJSON(inputs.os) }}
         kubernetes: ${{ fromJSON(inputs.kubernetes) }}
     env:
-      # Not /var/tmp: Ubuntu's AppArmor profile lets passt (libguestfs networking) create its
-      # socket only in a few places such as /tmp ("passt exited with status 1" otherwise).
       TMPDIR: /tmp
     steps:
       - uses: actions/checkout@v7
@@ -56,19 +54,23 @@ jobs:
           sudo apt-get update -q
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
             libguestfs-tools qemu-utils qemu-system-x86 cloud-image-utils socat
+          # libguestfs builds its appliance from the host kernel, which Ubuntu keeps root-only.
+          # Not as root: passt (libguestfs networking) refuses to run as root on Ubuntu.
+          sudo chmod 0644 /boot/vmlinuz-*
           virt-customize --version
 
       - name: Build
-        run: sudo -E ./build.sh "${{ matrix.os }}" "${{ matrix.kubernetes }}"
+        run: ./build.sh "${{ matrix.os }}" "${{ matrix.kubernetes }}"
 
       - name: Smoke test (boot with NoCloud, kubeadm init)
         if: inputs.smoke-test
-        run: sudo -E ./smoke-test.sh "output/${{ matrix.os }}-kube-${{ matrix.kubernetes }}.qcow2"
+        run: ./smoke-test.sh "output/${{ matrix.os }}-kube-${{ matrix.kubernetes }}.qcow2"
 
       - name: Diagnostics on failure
         if: failure()
         run: |
           sudo dmesg | grep -i -E 'apparmor="DENIED"|passt' | tail -20 || true
+          libguestfs-test-tool 2>&1 | grep -i -E 'passt|error|fail|kvm|TEST FINISHED' | head -40 || true
           df -h / /tmp
 
       - name: Upload image
