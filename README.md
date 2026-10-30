@@ -1,12 +1,20 @@
 # capi-navigator-images (spike)
 
+> [!WARNING]
+> **For testing purposes only.** These images and scripts are an experiment and are provided
+> "as is", without any warranty or support. They are not maintained, receive no security updates
+> and must not be used in production. The author accepts no responsibility or liability for any
+> damage, data loss or other consequences of using them. Use at your own risk.
+
 Cluster API node images for kubeadm, built from stock cloud images with `virt-customize`:
 containerd and runc (release binaries, checksums), kubelet/kubeadm/kubectl/cri-tools/kubernetes-cni
 from `pkgs.k8s.io` (exact version, only these held), QEMU guest agent, conntrack, socat; containerd
 with `SystemdCgroup`, registry mirrors from `/etc/containerd/certs.d` and the pause image kubeadm
 expects. Versions of the image are in `/etc/capi-image-release`.
 
-Spike for air-gapped kubeadm clusters in CAPI Navigator (backlog BL-01, BL-05); not published.
+A spike for air-gapped kubeadm clusters in [CAPI Navigator](https://github.com/alirionx/capi-navigator).
+For anything beyond testing, build your own images, e.g. with the official
+[Image Builder](https://image-builder.sigs.k8s.io/).
 
 ## Build locally
 

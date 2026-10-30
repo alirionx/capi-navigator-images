@@ -110,6 +110,10 @@ jobs:
           cat ./*.sha256 > SHA256SUMS && rm ./*.sha256
           tag="images-$(date -u +%Y%m%d)-${GITHUB_RUN_NUMBER}"
           {
+            echo "> [!WARNING]"
+            echo "> **For testing purposes only.** Provided \"as is\", without any warranty, support or security"
+            echo "> updates; not for production. The author accepts no responsibility or liability. See README."
+            echo
             echo "Cluster API node images for kubeadm, built from stock cloud images with virt-customize"
             echo "and smoke-tested (NoCloud boot, QEMU guest agent, \`kubeadm init\`)."
             echo
