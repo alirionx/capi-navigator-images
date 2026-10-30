@@ -35,11 +35,12 @@ with the official Image Builder).
 | `build.sh` | Downloads and verifies the stock cloud image, runs `virt-customize`, compresses, writes `.sha256`. Output in `output/`, downloads cached in `cache/` (both git-ignored). |
 | `versions.env` | The containerd and runc pins and the image rule (operating systems, Kubernetes minors): the only place they are set, overridable by environment. |
 | `matrix.sh` | Resolves the rule: operating systems, Kubernetes versions (two newest patches per minor from `dl.k8s.io`), image names. |
+| `changed.sh` | Tells whether a release would bring something new: build files changed since the last release tag, or an image not released yet. |
 | `cleanup.sh` | Keeps the newest released build of every image of the rule, deletes the rest from the releases. Dry run by default. |
 | `prepare-node.sh` | Runs inside the image during the build: kernel modules, sysctl, containerd and runc, Kubernetes packages, containerd configuration, `/etc/capi-image-release`. |
 | `build-in-container.sh` | Runs `build.sh` in a `debian:trixie` container (libguestfs 1.54). Used by CI; the recommended local way. |
 | `smoke-test.sh` | Boots an image like CAPMOX (NoCloud seed, guest agent channel) and runs `kubeadm init`. |
-| `.github/workflows/build.yml` | Manual workflow: matrix from the rule (or input lists), build, smoke test, artifacts, optional release and cleanup. |
+| `.github/workflows/build.yml` | On push of build files and by hand: matrix from the rule (or input lists), build, smoke test, artifacts, release if something changed, cleanup. |
 | `.github/workflows/cleanup.yml` | Runs `cleanup.sh`, after each release or by hand (dry run by default). |
 
 ## Commands
@@ -120,7 +121,8 @@ changes what the cleanup deletes: run `./cleanup.sh` (dry run) and show the resu
 ## Safety while working
 
 - Commit freely, but **never push**: the user pushes. A workflow run that needs new commits waits
-  until the user has pushed.
+  until the user has pushed. A push of build files builds **and publishes** a release: say so
+  when a commit touches them.
 - Ask before running the workflow, creating or deleting releases or tags, or running the cleanup
   without dry run. Releases are public (the repository is public).
 - Ask before touching a real Proxmox VE, registry or cluster.

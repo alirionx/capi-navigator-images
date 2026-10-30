@@ -1,12 +1,26 @@
 name: Build node images
 
-# Manual trigger only: builds node images from stock cloud images (virt-customize), Cluster API
-# images for kubeadm and guest-agent-only images, boots each one like CAPMOX does and runs
-# `kubeadm init` as smoke test. Without lists, the rule in versions.env (matrix.sh) decides what is
-# built. Images are workflow artifacts (short retention); with `release` they also become assets of
-# a GitHub release (one per run, all images plus SHA256SUMS), after which the cleanup deletes what
-# the rule no longer keeps.
+# Builds node images from stock cloud images (virt-customize), Cluster API images for kubeadm and
+# guest-agent-only images, boots each one like CAPMOX does and runs `kubeadm init` as smoke test.
+# Without lists, the rule in versions.env (matrix.sh) decides what is built. Images are workflow
+# artifacts (short retention) and become assets of a GitHub release (one per run, all images plus
+# SHA256SUMS) when something changed since the last release (changed.sh), after which the cleanup
+# deletes what the rule no longer keeps.
+#
+# A push to main that changes a build file builds the rule and releases it; started by hand, the run
+# releases only with `release` switched on, and only if something changed (IMG-F-34).
 on:
+  push:
+    branches: [main]
+    # The files that go into an image; the same list as BUILD_FILES in changed.sh.
+    paths:
+      - build.sh
+      - build-in-container.sh
+      - prepare-node.sh
+      - smoke-test.sh
+      - matrix.sh
+      - versions.env
+      - .github/workflows/build.yml
   workflow_dispatch:
     inputs:
       os:
@@ -30,7 +44,7 @@ on:
         default: '3'
         required: true
       release:
-        description: 'Publish the images as a GitHub release (needs all builds to succeed)'
+        description: 'Publish the images as a GitHub release if something changed since the last one (needs all builds to succeed)'
         type: boolean
         default: false
       cleanup:
@@ -41,21 +55,29 @@ on:
 permissions:
   contents: read
 
+# One run at a time, so releases and cleanups never overlap.
+concurrency:
+  group: build-node-images
+  cancel-in-progress: false
+
 jobs:
   matrix:
     name: Matrix
     runs-on: ubuntu-24.04
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
+      release: ${{ steps.release.outputs.release }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0          # changed.sh compares with the tag of the last release
 
       - name: Resolve the rule
         id: matrix
         env:
           OS_INPUT: ${{ inputs.os }}
           K8S_INPUT: ${{ inputs.kubernetes }}
-          QGA: ${{ inputs.qga }}
+          QGA: ${{ github.event_name == 'push' || inputs.qga }}
         run: |
           set -euo pipefail
           os="$OS_INPUT";   [ -n "$os" ]  || os="$(./matrix.sh os | jq -Rnc '[inputs]')"
@@ -66,6 +88,21 @@ jobs:
             || { echo "nothing to build: $matrix" >&2; exit 1; }
           jq . <<<"$matrix"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+      - name: Release or not
+        id: release
+        if: github.event_name == 'push' || inputs.release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MATRIX: ${{ steps.matrix.outputs.matrix }}
+        run: |
+          set -euo pipefail
+          images="$(jq -r '.os[] as $o | .variant[] | if . == "qga" then "\($o)-qga" else "\($o)-kube-\(.)" end' <<<"$MATRIX")"
+          if ./changed.sh $images; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::Nothing changed since the last release: the images are built and tested, not released."
+          fi
 
   build:
     name: ${{ matrix.os }} / ${{ matrix.variant }}
@@ -92,7 +129,7 @@ jobs:
           ls -l /dev/kvm
 
       - name: Install QEMU for the smoke test
-        if: inputs.smoke-test
+        if: github.event_name == 'push' || inputs.smoke-test
         run: |
           sudo apt-get update -q
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
@@ -103,7 +140,7 @@ jobs:
         run: ./build-in-container.sh "${{ matrix.os }}" "${{ matrix.variant }}"
 
       - name: Smoke test (boot with NoCloud, guest agent, kubeadm init)
-        if: inputs.smoke-test
+        if: github.event_name == 'push' || inputs.smoke-test
         run: ./smoke-test.sh "output/${IMAGE}.qcow2"
 
       - name: Diagnostics on failure
@@ -118,14 +155,14 @@ jobs:
           path: |
             output/${{ env.IMAGE }}.qcow2
             output/${{ env.IMAGE }}.qcow2.sha256
-          retention-days: ${{ inputs.retention-days }}
+          retention-days: ${{ inputs.retention-days || 3 }}
           compression-level: 0
           if-no-files-found: error
 
   release:
     name: Release
     needs: [matrix, build]
-    if: inputs.release
+    if: needs.matrix.outputs.release == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -184,8 +221,8 @@ jobs:
 
   cleanup:
     name: Cleanup
-    needs: release
-    if: inputs.release && inputs.cleanup
+    needs: [matrix, release]
+    if: needs.matrix.outputs.release == 'true' && (github.event_name == 'push' || inputs.cleanup)
     permissions:
       contents: write
     uses: ./.github/workflows/cleanup.yml

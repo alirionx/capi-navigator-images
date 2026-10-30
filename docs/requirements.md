@@ -90,10 +90,10 @@ This repository builds node images from stock cloud images for
 
 ### GitHub Actions: build and release
 
-- **IMG-F-30** MUST offer a manually triggered workflow that builds every combination of operating
-  systems and variants in parallel (`fail-fast: false`). Without input lists the rule of section 5
-  decides; optional JSON lists of operating systems and Kubernetes versions replace it for one run;
-  a switch (default on) adds the `qga` variant.
+- **IMG-F-30** MUST offer a workflow that builds every combination of operating systems and variants
+  in parallel (`fail-fast: false`). Without input lists the rule of section 5 decides; started by
+  hand, optional JSON lists of operating systems and Kubernetes versions replace it for one run and
+  a switch (default on) adds the `qga` variant. One run at a time.
 - **IMG-F-31** MUST run the smoke test for every image (switch, default on).
 - **IMG-F-32** MUST upload each image with its checksum as workflow artifact with configurable
   retention (default 3 days).
@@ -101,6 +101,13 @@ This repository builds node images from stock cloud images for
   `SHA256SUMS`, only when every build succeeded; the description carries the warning of IMG-NF-01,
   the image sizes, the operating systems and variants, the runtime versions and the run that built
   it.
+- **IMG-F-34** MUST release only when something changed since the newest release (`changed.sh`):
+  a build file (scripts, `versions.env`, `build.yml`) differs from the commit of its tag, or an
+  image of the run is in no release yet (e.g. a new Kubernetes patch in the rule). Otherwise the run
+  builds and tests only.
+- **IMG-F-35** MUST build the rule on every push to `main` that changes a build file, with smoke
+  test, release (IMG-F-34) and cleanup; started by hand, release and cleanup are switches (release
+  default off). There is no scheduled run: this is a test setup (decided 2026-10-30).
 
 ## 4. Interface: `/etc/capi-image-release`
 
@@ -199,8 +206,8 @@ All of it is set in `versions.env`, the only place for versions and the rule (IM
 
 ## 8. Outlook and open questions
 
-- **Scheduled rebuilds**: a schedule (e.g. weekly) that builds and releases the rule, so new patch
-  releases and OS updates arrive without a manual run.
+- **Scheduled rebuilds** were decided against (2026-10-30, test setup only); new patch releases
+  arrive with the next push or manual run.
 - **Version sync**: a check in CI that compares `KUBERNETES_MINORS` and the runtime pins with CAPI
   Navigator's `versions.yaml`.
 - **Further operating systems and architectures**, e.g. RHEL-compatible images (rpm repository of

@@ -47,12 +47,16 @@ releases of the two Kubernetes minors listed there (resolved from `dl.k8s.io`).
 
 ## GitHub Actions
 
-**Actions → Build node images → Run workflow**: without input the rule decides; JSON lists of
-operating systems and Kubernetes versions replace it for one run. Every combination is built, booted
+**Build node images** runs on every push to `main` that changes a build file (scripts,
+`versions.env`, the workflow) and releases the result, and by hand (**Actions → Build node images →
+Run workflow**): without input the rule decides; JSON lists of operating systems and Kubernetes
+versions replace it for one run. Every combination is built, booted
 with a NoCloud seed (as CAPMOX does) and, for kubeadm images, initialised with `kubeadm init`. The
-images are workflow artifacts with a short retention; with **release** switched on, the run also
-creates a GitHub release `images-<date>-<run>` with all images and a `SHA256SUMS` (assets up to
-2 GiB each; the kubeadm images are 0.8–1.4 GB).
+images are workflow artifacts with a short retention. A push, or a manual run with **release**
+switched on, also creates a GitHub release `images-<date>-<run>` with all images and a `SHA256SUMS`
+(assets up to 2 GiB each; the kubeadm images are 0.8–1.4 GB), but only if something changed since
+the last release: a build file, or an image that is not released yet such as a new Kubernetes patch
+(`changed.sh`).
 
 After a release, **Clean up releases** keeps only the newest build of every image of the rule and
 deletes older builds and images outside the rule (releases left empty are deleted). Started by hand
