@@ -189,8 +189,9 @@ All of it is set in `versions.env`, the only place for versions and the rule (IM
 - [x] Each version pin and the rule live in one place (IMG-F-52).
 - [x] `matrix.sh` resolves the rule to 20 images (2026-10-30); a dry run of the cleanup against the
       existing releases keeps everything that matches the rule.
-- [ ] The full rule (4 operating systems × `qga` + 4 Kubernetes versions) builds and passes the smoke
-      test in GitHub Actions, including `ubuntu-2404`, `debian-12` and the `qga` images.
+- [x] The full rule (4 operating systems × `qga` + 4 Kubernetes versions) builds and passes the smoke
+      test in GitHub Actions, including `ubuntu-2404`, `debian-12` and the `qga` images (run
+      41125563800, 2026-10-30; 18.6 GB in all, kubeadm images 0.76–1.35 GB, `qga` 0.39–0.95 GB).
 - [ ] A release of the full rule is created, and the cleanup after it removes the older builds of
       the same images and leaves releases without images deleted.
 - [ ] `KUBERNETES_MINORS` and the runtime versions match CAPI Navigator's `versions.yaml`
