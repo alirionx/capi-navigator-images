@@ -76,6 +76,9 @@ This repository builds node images from stock cloud images for
   `RUNC_VERSION`, and print the appliance's network setup with `DEBUG_NET=1`.
 - **IMG-F-13** MUST build the `qga` variant from the stock image with only the QEMU guest agent
   added (no Kubernetes packages, no containerd), plus `/etc/capi-image-release`.
+- **IMG-F-14** MUST bring the OS packages of every image to the patch level of the build day
+  (`virt-customize --update`, before the Kubernetes packages are installed and held), so an image
+  does not depend on the age of the cloud image it starts from.
 
 ### Smoke test
 
@@ -104,7 +107,8 @@ This repository builds node images from stock cloud images for
 - **IMG-F-34** MUST release only when something changed since the newest release (`changed.sh`):
   a build file (scripts, `versions.env`, `build.yml`) differs from the commit of its tag, or an
   image of the run is in no release yet (e.g. a new Kubernetes patch in the rule). Otherwise the run
-  builds and tests only.
+  builds and tests only. A manual run can skip this check with the switch `force` (default off),
+  e.g. to release current OS patches; OS patches alone count as no change (decided 2026-11-21).
 - **IMG-F-35** MUST build the rule on every push to `main` that changes a build file, with smoke
   test, release (IMG-F-34) and cleanup; started by hand, release and cleanup are switches (release
   default off). There is no scheduled run: this is a test setup (decided 2026-10-30).

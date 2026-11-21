@@ -47,6 +47,10 @@ on:
         description: 'Publish the images as a GitHub release if something changed since the last one (needs all builds to succeed)'
         type: boolean
         default: false
+      force:
+        description: 'Release even if nothing changed since the last release (e.g. for current OS patches)'
+        type: boolean
+        default: false
       cleanup:
         description: 'After the release, delete released images the rule no longer keeps'
         type: boolean
@@ -95,8 +99,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           MATRIX: ${{ steps.matrix.outputs.matrix }}
+          FORCE: ${{ inputs.force == true }}
         run: |
           set -euo pipefail
+          if [ "$FORCE" = true ]; then
+            echo "::notice::Release forced: the change check is skipped."
+            echo "release=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
           images="$(jq -r '.os[] as $o | .variant[] | if . == "qga" then "\($o)-qga" else "\($o)-kube-\(.)" end' <<<"$MATRIX")"
           if ./changed.sh $images; then
             echo "release=true" >> "$GITHUB_OUTPUT"

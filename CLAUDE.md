@@ -56,6 +56,7 @@ DEBUG_NET=1 ./build-in-container.sh …                   # print DNS and routes
 CONTAINERD_VERSION=… RUNC_VERSION=… ./build-in-container.sh …   # override the runtime pins
 gh workflow run build.yml                               # CI build of the rule (ask first)
 gh workflow run build.yml -f os='["debian-13"]' -f kubernetes='["v1.36.5"]'   # one combination
+gh workflow run build.yml -f release=true -f force=true   # release current OS patches, nothing else changed
 ```
 
 A build with KVM takes about 90 s plus downloads; without KVM it is much slower.

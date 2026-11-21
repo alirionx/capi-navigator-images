@@ -56,7 +56,9 @@ images are workflow artifacts with a short retention. A push, or a manual run wi
 switched on, also creates a GitHub release `images-<date>-<run>` with all images and a `SHA256SUMS`
 (assets up to 2 GiB each; the kubeadm images are 0.8–1.4 GB), but only if something changed since
 the last release: a build file, or an image that is not released yet such as a new Kubernetes patch
-(`changed.sh`).
+(`changed.sh`). Every build brings the OS packages to the patch level of the day; to release them
+without any other change, start the workflow with **release** and **force**:
+`gh workflow run build.yml -f release=true -f force=true`.
 
 After a release, **Clean up releases** keeps only the newest build of every image of the rule and
 deletes older builds and images outside the rule (releases left empty are deleted). Started by hand

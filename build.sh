@@ -57,12 +57,15 @@ else
     --run-command 'bash /tmp/prepare-node.sh && rm -f /tmp/prepare-node.sh /tmp/capi-versions')
 fi
 
-# The root file system is partition 1 in the Ubuntu and Debian cloud images.
+# The root file system is partition 1 in the Ubuntu and Debian cloud images. `--update` brings the
+# OS packages to the patch level of the build day, whatever the age of the cloud image (IMG-F-14);
+# it runs before the Kubernetes packages are installed and held.
 DEBUG=()
 [ "${DEBUG_NET:-}" = 1 ] && DEBUG=(--run-command 'cat /etc/resolv.conf; ip -4 addr; ip route; getent hosts deb.debian.org cloud-images.ubuntu.com || echo "DNS FAILED"')
 virt-customize -a "$OUT" \
   "${DEBUG[@]}" \
   --run-command 'growpart /dev/sda 1 && resize2fs /dev/sda1' \
+  --update \
   "${CUSTOMIZE[@]}" \
   --run-command 'apt-get clean && rm -rf /var/lib/apt/lists/*' \
   --run-command 'cloud-init clean --logs --seed' \
