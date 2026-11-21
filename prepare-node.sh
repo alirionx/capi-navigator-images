@@ -12,15 +12,18 @@ printf 'overlay\nbr_netfilter\n' > /etc/modules-load.d/kubernetes.conf
 printf 'net.bridge.bridge-nf-call-iptables = 1\nnet.bridge.bridge-nf-call-ip6tables = 1\nnet.ipv4.ip_forward = 1\n' \
   > /etc/sysctl.d/99-kubernetes.conf
 
+# Downloads retry on any error: GitHub answers parallel CI jobs now and then with a 403.
+CURL=(curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors)
+
 # containerd and runc: official release binaries, verified with their checksums.
 tmp="$(mktemp -d)"; cd "$tmp"
 ctr="containerd-${CONTAINERD_VERSION}-linux-${ARCH}.tar.gz"
-curl -fsSLO "https://github.com/containerd/containerd/releases/download/v${CONTAINERD_VERSION}/${ctr}"
-curl -fsSLO "https://github.com/containerd/containerd/releases/download/v${CONTAINERD_VERSION}/${ctr}.sha256sum"
+"${CURL[@]}" -O "https://github.com/containerd/containerd/releases/download/v${CONTAINERD_VERSION}/${ctr}"
+"${CURL[@]}" -O "https://github.com/containerd/containerd/releases/download/v${CONTAINERD_VERSION}/${ctr}.sha256sum"
 sha256sum -c "${ctr}.sha256sum"
 tar -C /usr/local -xzf "${ctr}"
-curl -fsSLO "https://github.com/opencontainers/runc/releases/download/v${RUNC_VERSION}/runc.${ARCH}"
-curl -fsSLO "https://github.com/opencontainers/runc/releases/download/v${RUNC_VERSION}/runc.sha256sum"
+"${CURL[@]}" -O "https://github.com/opencontainers/runc/releases/download/v${RUNC_VERSION}/runc.${ARCH}"
+"${CURL[@]}" -O "https://github.com/opencontainers/runc/releases/download/v${RUNC_VERSION}/runc.sha256sum"
 grep " runc.${ARCH}\$" runc.sha256sum | sha256sum -c
 install -m 0755 "runc.${ARCH}" /usr/local/sbin/runc
 cd /; rm -rf "$tmp"
@@ -49,7 +52,7 @@ EOF
 # kubelet, kubeadm, kubectl, cri-tools, kubernetes-cni of exactly this version; only they are held.
 PKGS="https://pkgs.k8s.io/core:/stable:/${K8S_MINOR}/deb"
 mkdir -p /etc/apt/keyrings
-curl -fsSL "${PKGS}/Release.key" | gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes.gpg
+"${CURL[@]}" "${PKGS}/Release.key" | gpg --batch --yes --dearmor -o /etc/apt/keyrings/kubernetes.gpg
 echo "deb [signed-by=/etc/apt/keyrings/kubernetes.gpg] ${PKGS}/ /" > /etc/apt/sources.list.d/kubernetes.list
 apt-get update -q
 deb="$(apt-cache madison kubeadm | awk -v v="${K8S_VERSION#v}-" 'index($3, v) == 1 && !f { print $3; f = 1 }')"

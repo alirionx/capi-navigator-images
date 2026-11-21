@@ -35,8 +35,9 @@ case "$OS" in
 esac
 
 mkdir -p cache output
-[ -f "cache/$BASE" ] || curl -fsSL -o "cache/$BASE" "$BASE_URL/$BASE"
-curl -fsSL "$BASE_URL/$SUMS" | awk -v f="$BASE" '$2 == f || $2 == "*" f { print $1 "  cache/" f }' \
+CURL=(curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors)   # transient errors of mirrors and CDNs
+[ -f "cache/$BASE" ] || "${CURL[@]}" -o "cache/$BASE" "$BASE_URL/$BASE"
+"${CURL[@]}" "$BASE_URL/$SUMS" | awk -v f="$BASE" '$2 == f || $2 == "*" f { print $1 "  cache/" f }' \
   | grep . | $SUMCMD -c
 
 OUT="output/${NAME}.qcow2"
